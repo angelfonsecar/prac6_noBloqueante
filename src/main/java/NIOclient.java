@@ -103,7 +103,6 @@ public class NIOclient {
         byte[] b = baos.toByteArray();
         ByteBuffer buffer = ByteBuffer.wrap(b);
         client.write(buffer);
-        System.out.println("Objeto enviado");
         oos2.close();
         baos.close();
     }
@@ -120,8 +119,7 @@ public class NIOclient {
 
     public void esperaParaLeer() throws IOException {
         while (true){
-            int x = selector.select();
-            System.out.println("llaves actualizadas= " + x);
+            selector.select();
             Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
 
             while (iterator.hasNext()) {
@@ -199,7 +197,7 @@ public class NIOclient {
             ByteBuffer buffer = ByteBuffer.wrap(b);
             client.write(buffer);
             //bloquearse hasta que el server haya leido
-            esperaParaLeer();//selector.select();
+            esperaParaLeer();
             leeObjeto(client);
             enviados += l;
         }
@@ -294,13 +292,11 @@ public class NIOclient {
         System.out.println("Archivo o dir a eliminar: ");
         String elec = reader.nextLine();
         escribeObjeto(elec, client);
-        /*oos.writeObject(elec);
-        oos.flush();*/
-        esperaParaLeer();//selector.select();
+        esperaParaLeer();
         System.out.println( (String) leeObjeto(client) );
     }
 
-    public void cambiarDir(SocketChannel client) throws IOException, ClassNotFoundException, InterruptedException {
+    public void cambiarDir(SocketChannel client) throws IOException, ClassNotFoundException{
         Scanner reader = new Scanner(System.in);
         System.out.println("Nombre del dir: ");
         if(!dirActual.equals("drive"))  //mostrar la opción de "atrás" para volver a la raíz (drive\)
@@ -308,8 +304,6 @@ public class NIOclient {
 
         String elec = reader.nextLine();
         escribeObjeto(elec,client);
-        /*oos.writeObject(elec);
-        oos.flush();*/
 
         esperaParaLeer();
         String respuesta = (String) leeObjeto(client);
