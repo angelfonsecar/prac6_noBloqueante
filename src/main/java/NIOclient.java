@@ -45,19 +45,17 @@ public class NIOclient {
                             } catch (IOException e) {
                                 e.printStackTrace();
                             }
-
                         }
-                        client.register(selector, SelectionKey.OP_READ| SelectionKey.OP_WRITE);
+                        client.register(selector, SelectionKey.OP_READ);
                         continue;
                     }
-
                     if (key.isReadable()) {
                         mostrarArchivos(client);
+                        client.register(selector, SelectionKey.OP_WRITE);
                         key.interestOps(SelectionKey.OP_WRITE);
                         continue;
                     }
-
-                    else if (key.isWritable()){
+                    if (key.isWritable()){
                         int elec;
                         Scanner reader = new Scanner(System.in);
                         do{
@@ -73,16 +71,16 @@ public class NIOclient {
                                     subir(client);
                                     mostrarArchivos(client);
                                 }
-                                /*case 2 -> {   //descargar un archivo o carpeta
+                                case 2 -> {   //descargar un archivo o carpeta
                                     System.out.println("Descargar un archivo o carpeta");
-                                    descargar();
+                                    descargar(client);
                                 }
                                 case 3 -> {   //eliminar archivo o carpeta
                                     System.out.println("Eliminar");
-                                    eliminar();
-                                    mostrarArchivos();
+                                    eliminar(client);
+                                    mostrarArchivos(client);
                                 }
-                                case 4 -> cambiarDir();   //cambiar directorio*/
+                                case 4 -> cambiarDir(client);   //cambiar directorio
                             }
                         }while(elec!=0);
                         System.out.println("Saliendo...");
@@ -129,13 +127,10 @@ public class NIOclient {
             while (iterator.hasNext()) {
                 SelectionKey key = (SelectionKey) iterator.next();
                 iterator.remove();
-                if (key.isWritable()) {
-                    System.out.println("cambiando a espera para leer");
+                if (key.isWritable()){
                     key.interestOps(SelectionKey.OP_READ);
                 }
-                if( key.isReadable()) {
-                    System.out.println("Listo para leer");
-                    //key.interestOps(SelectionKey.OP_WRITE);
+                if(key.isReadable()) {
                     return;
                 }
             }
@@ -143,14 +138,7 @@ public class NIOclient {
     }
 
     public void mostrarArchivos(SocketChannel client) throws IOException, ClassNotFoundException {
-
-        /*ByteBuffer b = ByteBuffer.allocate(10000);
-        b.clear();
-        client.read(b);
-        b.flip();
-        ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(b.array()));*/
-
-
+        esperaParaLeer();
         File[] listaDeArchivos = (File[]) leeObjeto(client);
         if (listaDeArchivos == null || listaDeArchivos.length == 0)
             System.out.println("Directorio vacio");
@@ -219,6 +207,123 @@ public class NIOclient {
         System.out.println("Archivo enviado");
     }
 
+    public void descargar(SocketChannel client) throws IOException, ClassNotFoundException {
+        Scanner reader = new Scanner(System.in);
+        System.out.println("Archivo o dir a descargar: ");
+        String elecdow = reader.nextLine();
+        escribeObjeto(elecdow,client);
+        esperaParaLeer();
+        String respuesta = (String) leeObjeto(client);
+        escribeObjeto("",client);
+        System.out.println(respuesta);
+
+        if(respuesta.equals("El archivo o dir no existe"))
+            return;
+
+        esperaParaLeer();
+        File f = (File)leeObjeto(client);
+        String fileName = f.toString();
+        String aux = FilenameUtils.getExtension(fileName);
+
+        if(aux.equals("zip")) {
+            System.out.println("\nDeseas descargar una carpeta");
+            bajarDir(f,client);
+        }
+        else {
+            System.out.println("\nDeseas descargar un archivo");
+            bajarArchivo(f,client);
+        }
+    }
+
+    public void bajarDir(File f,SocketChannel client) throws IOException{
+
+        System.out.println("carpeta a descargar:"+f.getName());
+
+        bajarArchivo(f,client);
+
+        String destino = Paths.get(ruta, f.getName()).toString();
+        Path descom = Paths.get(ruta, FilenameUtils.removeExtension(f.getName()) );
+        System.out.println("Descomprimiendo " + destino + " en " + descom);
+
+        new net.lingala.zip4j.ZipFile(destino).extractAll(descom.toString());
+        new File(destino).delete();
+    }
+
+    public void bajarArchivo(File f,SocketChannel client) {
+        long tam = f.length();
+
+        System.out.println("Comienza descarga del archivo '"+f.getName()+"' de "+tam/1024+" kb");
+
+        try {
+            System.out.println("File chooser lanzado");
+            JFileChooser jf = new JFileChooser();
+            jf.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+            int r = jf.showOpenDialog(null);
+            if(r==JFileChooser.APPROVE_OPTION) {
+                File aux = jf.getSelectedFile();
+                ruta = aux.getAbsolutePath();
+
+                System.out.println("Descargando en: " +ruta);
+
+                DataOutputStream dosf = new DataOutputStream(new FileOutputStream(Paths.get(ruta,f.getName()).toString()));
+
+                long recibidos = 0;
+                int l;
+                while (recibidos < tam) {
+                    ByteBuffer b = ByteBuffer.allocate(1500);
+                    b.clear();
+                    esperaParaLeer();
+                    client.read(b);
+                    b.flip();
+                    l = b.limit();
+                    dosf.write(b.array(),0,l);
+                    dosf.flush();
+                    recibidos += l;
+                    escribeObjeto("",client);
+                }
+                System.out.println("Archivo recibido");
+                dosf.close();
+            }
+        }catch(Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void eliminar(SocketChannel client) throws IOException, ClassNotFoundException {     //trabajo en este
+        Scanner reader = new Scanner(System.in);
+        System.out.println("Archivo o dir a eliminar: ");
+        String elec = reader.nextLine();
+        escribeObjeto(elec, client);
+        /*oos.writeObject(elec);
+        oos.flush();*/
+        esperaParaLeer();//selector.select();
+        System.out.println( (String) leeObjeto(client) );
+    }
+
+    public void cambiarDir(SocketChannel client) throws IOException, ClassNotFoundException, InterruptedException {
+        Scanner reader = new Scanner(System.in);
+        System.out.println("Nombre del dir: ");
+        if(!dirActual.equals("drive"))  //mostrar la opción de "atrás" para volver a la raíz (drive\)
+            System.out.println("( .. para volver al inicio )");
+
+        String elec = reader.nextLine();
+        escribeObjeto(elec,client);
+        /*oos.writeObject(elec);
+        oos.flush();*/
+
+        esperaParaLeer();
+        String respuesta = (String) leeObjeto(client);
+
+        if(respuesta.equals("no")){
+            elec = "";
+            System.out.println("Dir invalido");
+        }
+        if(elec.equals(".."))
+            dirActual = "drive";
+        else if(!elec.equals(""))
+            dirActual = dirActual + "\\" + elec;
+        mostrarArchivos(client);
+    }
     public static void main(String[] args) {
         new NIOclient();
     }
