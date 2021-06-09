@@ -1,6 +1,5 @@
 import org.apache.commons.io.FilenameUtils;
 import org.zeroturnaround.zip.ZipUtil;
-
 import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.StandardSocketOptions;
@@ -12,7 +11,6 @@ import java.nio.channels.SocketChannel;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Iterator;
-
 
 public class NIOserver {
     private String dirActual;
@@ -39,20 +37,12 @@ public class NIOserver {
             server.register(selector, SelectionKey.OP_ACCEPT);
             System.out.println("Servidor iniciado esperando por archivos...");
 
-
             for(;;){
-
-                System.out.println("Entra for");
-
-                //int x=selector.select(5000);
-                //System.out.println("Selector devuelve: "+x);
 
                 selector.select();
                 Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
 
                 while (iterator.hasNext()) {
-                    System.out.println("Entra while");
-
                     SelectionKey key = (SelectionKey) iterator.next();
                     iterator.remove();
 
@@ -61,7 +51,6 @@ public class NIOserver {
                         System.out.println("Cliente conectado desde" +client.socket().getInetAddress( )+ ":" +client.socket( ).getPort( ));
                         client.configureBlocking(false);
                         client.register(selector, SelectionKey.OP_WRITE| SelectionKey.OP_READ);
-
                         continue;
                     }
 
@@ -70,47 +59,38 @@ public class NIOserver {
                     if(key.isWritable()){
                         mostrarArchivos(channel);
                         key.interestOps(SelectionKey.OP_READ);
-                        System.out.println("write");
-                        continue;
                     }
                     else if(key.isReadable()){
-                        System.out.println("read");
-                        //while (true){//bucle de escucha de instrucciones
-                            ByteBuffer bb = ByteBuffer.allocate(4);
-                            bb.clear();
-                            channel.read(bb);
-                            bb.flip();
-                            int elec = bb.getInt();
-                            System.out.println("elec = " + elec);
-
-                            if(elec==0) {
-                                channel.close();
-                                break;
+                        ByteBuffer bb = ByteBuffer.allocate(4);
+                        bb.clear();
+                        channel.read(bb);
+                        bb.flip();
+                        int elec = bb.getInt();
+                        System.out.println("elec = " + elec);
+                        if(elec==0) {
+                            channel.close();
+                            break;
+                        }
+                        switch (elec) {
+                            case 1 -> {   //subir archivo o carpeta
+                                subir(channel);
+                                mostrarArchivos(channel);
                             }
-                            switch (elec) {
-                                case 1 -> {   //subir archivo o carpeta
-                                    subir(channel);
-                                    mostrarArchivos(channel);
-                                }
-                                case 2 -> {
-                                    descargar(channel);
-                                }
-                                case 3 -> {
-                                    eliminar(channel);
-                                    mostrarArchivos(channel);
-                                }
-                                case 4 -> {
-                                    System.out.println("cambiar dir");
-                                    cambiarDir(channel);
-                                }
+                            case 2 -> {
+                                descargar(channel);
                             }
-                        //}
+                            case 3 -> {
+                                eliminar(channel);
+                                mostrarArchivos(channel);
+                            }
+                            case 4 -> {
+                                System.out.println("cambiar dir");
+                                cambiarDir(channel);
+                            }
+                        }
                     }
                 }
-                //prof
-
-
-            }//for
+            }
 
         }catch(Exception e){
             e.printStackTrace();
@@ -125,7 +105,6 @@ public class NIOserver {
         byte[] b = baos.toByteArray();
         ByteBuffer buffer = ByteBuffer.wrap(b);
         channel.write(buffer);
-        System.out.println("Objeto enviado");
         oos2.close();
         baos.close();
     }
@@ -142,25 +121,20 @@ public class NIOserver {
 
     public void esperaParaLeer(SocketChannel channel) throws IOException {
         while (true){
-            int x = selector.select();
-            System.out.println("llaves actualizadas= " + x);
+            selector.select();
             Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
 
             while (iterator.hasNext()) {
                 SelectionKey key = (SelectionKey) iterator.next();
-                System.out.println("Obtencion de key");
                 iterator.remove();
 
                 if(!key.channel().equals(channel))  //si el canal relacionado a la key no es el mismo desde el que se
                     continue;                       //invocó la función, buscar otra llave
 
                 if(key.isWritable()) {
-                    System.out.println("cambiando a espera para leer");
                     key.interestOps(SelectionKey.OP_READ);
                 }
                 if(key.isReadable()) {
-                    System.out.println("Listo para leer");
-                    //key.interestOps(SelectionKey.OP_WRITE);
                     return;
                 }
             }
@@ -168,18 +142,14 @@ public class NIOserver {
     }
 
     public void mostrarArchivos(SocketChannel channel) throws IOException {
-        System.out.println("Mostrando archivos");
         File f = new File(dirActual);
         File []listaDeArchivos = f.listFiles();
-
         escribeObjeto(listaDeArchivos,channel);
-
     }
 
     public void subir(SocketChannel channel) throws IOException, ClassNotFoundException {
-        esperaParaLeer(channel);//selector.select();
-        File f = (File)leeObjeto(channel); //archivo que recibo
-
+        esperaParaLeer(channel);
+        File f = (File)leeObjeto(channel);
         String fileName = f.toString();
         String aux = FilenameUtils.getExtension(fileName);
 
@@ -194,23 +164,17 @@ public class NIOserver {
     }
 
     public void subirDir(File f, SocketChannel channel) throws IOException{
-
         System.out.println("carpeta a subir:"+f.getName());
         String destino = Paths.get(dirActual, f.getName()).toString();
-
         subirArchivo(f,channel);
-
         Path descom = Paths.get(dirActual, FilenameUtils.removeExtension(f.getName()) );
-
         System.out.println("Descomprimiendo " + destino + " en " + descom);
-
         new net.lingala.zip4j.ZipFile(destino).extractAll(descom.toString());
         new File(destino).delete();
     }
 
     public void subirArchivo(File f, SocketChannel channel) throws IOException {
         long tam = f.length();
-
         System.out.println("Comienza descarga del archivo '"+f.getName()+"' de "+tam/1024+" kb");
         System.out.println("Subiendo a "+dirActual);
         DataOutputStream dosf = new DataOutputStream(new FileOutputStream(dirActual+f.getName()));
@@ -225,13 +189,11 @@ public class NIOserver {
             channel.read(b);
             b.flip();
             l = b.limit();
-
             dosf.write(b.array(),0,l);
             dosf.flush();
             escribeObjeto("",channel);
             recibidos += l;
-        }//while
-
+        }
         System.out.println("Archivo recibido");
         dosf.close();
     }
@@ -242,10 +204,7 @@ public class NIOserver {
         File fileToDowload = new File(dirActual+"\\"+elecdow);
         if(fileToDowload.exists()){
             System.out.println("Descargando "+fileToDowload.getAbsolutePath());
-
             escribeObjeto("Descargando"+fileToDowload.getAbsolutePath(),channel);
-            /*oos.writeObject("Descargando" +fileToDowload.getAbsolutePath());
-            oos.flush();*/
             if (!fileToDowload.isDirectory()) {  //descargar archivo
                 enviarDeseado(fileToDowload,channel);
             } else {
@@ -257,77 +216,55 @@ public class NIOserver {
             }
         }else {
             escribeObjeto("El archivo o dir no existe",channel);
-            /*oos.writeObject("El archivo o dir no existe");
-            oos.flush();*/
         }
     }
 
     public void enviarDeseado(File f,SocketChannel channel) throws IOException, ClassNotFoundException {
         long tam = f.length();
         System.out.println("Enviando '"+f.getName()+"' de "+tam/1024+" kb");
-
-
-        esperaParaLeer(channel);//esperaParaEscribir(channel);//aqui se quedaaaba
+        esperaParaLeer(channel);
         leeObjeto(channel);
         escribeObjeto(f,channel);
-        /*oos.writeObject(f);
-        oos.flush();*/
-
         DataInputStream disf = new DataInputStream(new FileInputStream(f.getAbsolutePath()));
-
         long enviados = 0;
         int l;
-        int n=0;
         while (enviados<tam){
             byte[] b = new byte[1500];
             l=disf.read(b);
             ByteBuffer buffer = ByteBuffer.wrap(b);
             channel.write(buffer);
-            System.out.println("Bloque "+n+" done");
-
-            esperaParaLeer(channel);//esperaParaEscribir(channel);//espera pa escribir selector.select();
+            esperaParaLeer(channel);
             leeObjeto(channel);
             enviados += l;
-            n++;
         }
         disf.close();
         System.out.println("Archivo enviado");
     }
 
-    public void eliminar(SocketChannel channel) throws IOException, ClassNotFoundException {     //trabajo en este
-        esperaParaLeer(channel);//selector.select();
+    public void eliminar(SocketChannel channel) throws IOException, ClassNotFoundException {
+        esperaParaLeer(channel);
         String elec = (String) leeObjeto(channel);
         File fileToDelete = new File(dirActual+"\\"+elec);
         if(fileToDelete.exists()){
             System.out.println("eliminando "+fileToDelete.getAbsolutePath());
             if (!fileToDelete.isDirectory()) {  //eliminar archivo
                 if(fileToDelete.delete()) {
-                    /*oos.writeObject("Archivo eliminado");
-                    oos.flush();*/
                     escribeObjeto("Archivo eliminado", channel);
                 }
                 else {
-                    /*oos.writeObject("Error al eliminar archivo");
-                    oos.flush();*/
                     escribeObjeto("Error al eliminar archivo", channel);
                 }
             }
             else {        //eliminar directorio
                 if(deleteDirectory(fileToDelete)) {
-                    /*oos.writeObject("Dir eliminado");
-                    oos.flush();*/
                     escribeObjeto("Dir eliminado", channel);
                 }
                 else {
-                    /*oos.writeObject("Error al eliminar dir");
-                    oos.flush();*/
                     escribeObjeto("Error al eliminar dir", channel);
                 }
             }
         }else {
             escribeObjeto("El archivo o dir no existe",channel);
-            /*oos.writeObject("El archivo o dir no existe");
-            oos.flush();*/
         }
     }
     boolean deleteDirectory(File directoryToBeDeleted) {
@@ -339,18 +276,15 @@ public class NIOserver {
         return directoryToBeDeleted.delete();
     }
 
-    public void cambiarDir(SocketChannel channel) throws IOException, ClassNotFoundException {   //estoy trabajando en este
+    public void cambiarDir(SocketChannel channel) throws IOException, ClassNotFoundException {
         esperaParaLeer(channel);
         String elec = (String) leeObjeto(channel);
         File f = new File(dirActual+"\\"+elec);
-
         boolean existeDir = f.isDirectory() || elec.equals("..");
         if(!existeDir){  //comprobamos que el directorio solicitado existe
             elec = "";
             System.out.println("Dir invalido");
         }
-
-        //escribeObjeto(existeDir);
         if (existeDir)
             escribeObjeto("si",channel);
         else
