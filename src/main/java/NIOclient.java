@@ -1,3 +1,4 @@
+import org.apache.commons.io.FilenameUtils;
 import org.zeroturnaround.zip.ZipUtil;
 import javax.swing.*;
 import java.io.*;
@@ -6,22 +7,24 @@ import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.util.Iterator;
 import java.util.Scanner;
 
 public class NIOclient {
     private String dirActual = "drive";
+    private Selector selector;
+    private String ruta;
 
     public NIOclient() {
         try {
-            //ByteBuffer buffer = ByteBuffer.allocate(10000);
-
-            Selector selector = Selector.open();
-            SocketChannel connectionClient = SocketChannel.open();
-            connectionClient.configureBlocking(false);
-            connectionClient.connect(new InetSocketAddress("127.0.0.1", 3500));
-            connectionClient.register(selector, SelectionKey.OP_CONNECT);
+            selector = Selector.open();
+            SocketChannel client = SocketChannel.open();
+            client.configureBlocking(false);
+            client.connect(new InetSocketAddress("127.0.0.1", 3500));
+            client.register(selector, SelectionKey.OP_CONNECT);
 
             while (true) {
 
@@ -33,14 +36,12 @@ public class NIOclient {
                     SelectionKey key = (SelectionKey) iterator.next();
                     iterator.remove();
 
-                    SocketChannel client = (SocketChannel) key.channel();
-
                     if (key.isConnectable()) {
                         if (client.isConnectionPending()) {
-                            System.out.println("Intentando establecer la conexion\n\n");
+                            System.out.println("Intentando establecer la conexion\n");
                             try {
                                 client.finishConnect();
-                                System.out.println("Conexion establecida ;)\n\n");
+                                System.out.println("Conexion establecida ;)\n");
                             } catch (IOException e) {
                                 e.printStackTrace();
                             }
@@ -70,7 +71,7 @@ public class NIOclient {
                                 case 1 -> {   //subir archivo o carpeta
                                     System.out.println("Lanzando JFileChooser...");
                                     subir(client);
-                                    //mostrarArchivos(client);
+                                    mostrarArchivos(client);
                                 }
                                 /*case 2 -> {   //descargar un archivo o carpeta
                                     System.out.println("Descargar un archivo o carpeta");
@@ -84,6 +85,10 @@ public class NIOclient {
                                 case 4 -> cambiarDir();   //cambiar directorio*/
                             }
                         }while(elec!=0);
+                        System.out.println("Saliendo...");
+                        client.close();
+                        selector.close();
+                        return;
                     }
                 }
             }
@@ -113,6 +118,28 @@ public class NIOclient {
         Object o = ois.readObject();
         ois.close();
         return o;
+    }
+
+    public void esperaParaLeer() throws IOException {
+        while (true){
+            int x = selector.select();
+            System.out.println("llaves actualizadas= " + x);
+            Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
+
+            while (iterator.hasNext()) {
+                SelectionKey key = (SelectionKey) iterator.next();
+                iterator.remove();
+                if (key.isWritable()) {
+                    System.out.println("cambiando a espera para leer");
+                    key.interestOps(SelectionKey.OP_READ);
+                }
+                if( key.isReadable()) {
+                    System.out.println("Listo para leer");
+                    //key.interestOps(SelectionKey.OP_WRITE);
+                    return;
+                }
+            }
+        }
     }
 
     public void mostrarArchivos(SocketChannel client) throws IOException, ClassNotFoundException {
@@ -170,7 +197,7 @@ public class NIOclient {
         }
     }
 
-    public void subirArchivo(File f, SocketChannel client) throws IOException {
+    public void subirArchivo(File f, SocketChannel client) throws IOException, ClassNotFoundException {
         long tam = f.length();
         System.out.println("Enviando '"+f.getName()+"' de "+tam/1024+" kb");
         escribeObjeto(f,client);
@@ -183,8 +210,9 @@ public class NIOclient {
             l=disf.read(b);
             ByteBuffer buffer = ByteBuffer.wrap(b);
             client.write(buffer);
-            /*oos.write(b, 0, l);
-            oos.flush();*/
+            //bloquearse hasta que el server haya leido
+            esperaParaLeer();//selector.select();
+            leeObjeto(client);
             enviados += l;
         }
         disf.close();

@@ -1,4 +1,6 @@
 import org.apache.commons.io.FilenameUtils;
+import org.zeroturnaround.zip.ZipUtil;
+
 import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.StandardSocketOptions;
@@ -14,6 +16,7 @@ import java.util.Iterator;
 public class NIOserver {
     private String dirActual;
     private String raiz;
+    private Selector selector;
 
     public NIOserver() {
         try{
@@ -27,10 +30,7 @@ public class NIOserver {
             f2.mkdirs();
             f2.setWritable(true);
 
-            //* prof
-
-            //ByteBuffer buffer = ByteBuffer.allocate(10000);
-            Selector selector = Selector.open();
+            selector = Selector.open();
             ServerSocketChannel server = ServerSocketChannel.open();
             server.configureBlocking(false);
             server.setOption(StandardSocketOptions.SO_REUSEADDR,true);
@@ -38,14 +38,12 @@ public class NIOserver {
             server.register(selector, SelectionKey.OP_ACCEPT);
             System.out.println("Servidor iniciado esperando por archivos...");
 
-            // prof */
 
             for(;;){
 
-
                 System.out.println("Entra for");
 
-                int x=selector.select(5000);
+                //int x=selector.select(5000);
                 //System.out.println("Selector devuelve: "+x);
 
                 selector.select();
@@ -84,6 +82,10 @@ public class NIOserver {
                             int elec = bb.getInt();
                             System.out.println("elec = " + elec);
 
+                            if(elec==0) {
+                                channel.close();
+                                break;
+                            }
                             switch (elec) {
                                 case 1 -> {   //subir archivo o carpeta
                                     subir(channel,selector);
@@ -98,8 +100,8 @@ public class NIOserver {
                                 }
                                 case 4 -> {
                                     System.out.println("cambiar dir");
-                                    cambiarDir();
-                                }*/
+                                    cambiarDir(channel);
+                                }
                             }
                         //}
                     }
@@ -137,16 +139,44 @@ public class NIOserver {
         return o;
     }
 
-    public void mostrarArchivos(SocketChannel channel) throws IOException, InterruptedException {
+    public void esperaParaLeer(SocketChannel channel) throws IOException {
+        while (true){
+            int x = selector.select();
+            System.out.println("llaves actualizadas= " + x);
+            Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
+
+            while (iterator.hasNext()) {
+                SelectionKey key = (SelectionKey) iterator.next();
+                System.out.println("Obtencion de key");
+                iterator.remove();
+
+                if(!key.channel().equals(channel))  //si el canal relacionado a la key no es el mismo desde el que se
+                    continue;                       //invocó la función, buscar otra llave
+
+                if(key.isWritable()) {
+                    System.out.println("cambiando a espera para leer");
+                    key.interestOps(SelectionKey.OP_READ);
+                }
+                if(key.isReadable()) {
+                    System.out.println("Listo para leer");
+                    //key.interestOps(SelectionKey.OP_WRITE);
+                    return;
+                }
+            }
+        }
+    }
+
+    public void mostrarArchivos(SocketChannel channel) throws IOException {
+        System.out.println("Mostrando archivos");
         File f = new File(dirActual);
         File []listaDeArchivos = f.listFiles();
 
         escribeObjeto(listaDeArchivos,channel);
+
     }
 
-
-    public void subir(SocketChannel channel, Selector selector) throws IOException, ClassNotFoundException {
-        selector.select();
+    public void subir(SocketChannel channel) throws IOException, ClassNotFoundException {
+        esperaParaLeer(channel);//selector.select();
         File f = (File)leeObjeto(channel); //archivo que recibo
 
         String fileName = f.toString();
@@ -171,7 +201,7 @@ public class NIOserver {
 
         Path descom = Paths.get(dirActual, FilenameUtils.removeExtension(f.getName()) );
 
-        System.out.println("Descomprimiendo " + destino + " en " + descom.toString());
+        System.out.println("Descomprimiendo " + destino + " en " + descom);
 
         new net.lingala.zip4j.ZipFile(destino).extractAll(descom.toString());
         new File(destino).delete();
@@ -189,14 +219,15 @@ public class NIOserver {
         while(recibidos<tam){
             ByteBuffer b = ByteBuffer.allocate(1500);
             b.clear();
+            //bloquearse hasta que el client haya escrito
+            esperaParaLeer(channel);
             channel.read(b);
             b.flip();
-            /*byte[] b = new byte[1500];
-            l = ois.read(b,0,b.length);*/
             l = b.limit();
 
             dosf.write(b.array(),0,l);
             dosf.flush();
+            escribeObjeto("",channel);
             recibidos += l;
         }//while
 
