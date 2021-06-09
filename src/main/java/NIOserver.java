@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Iterator;
 
+
 public class NIOserver {
     private String dirActual;
     private String raiz;
@@ -88,15 +89,15 @@ public class NIOserver {
                             }
                             switch (elec) {
                                 case 1 -> {   //subir archivo o carpeta
-                                    subir(channel,selector);
-                                    //mostrarArchivos(channel);
+                                    subir(channel);
+                                    mostrarArchivos(channel);
                                 }
-                                /*case 2 -> {
-                                    System.out.println("El cliente quiere descargar");
+                                case 2 -> {
+                                    descargar(channel);
                                 }
                                 case 3 -> {
-                                    eliminar();
-                                    mostrarArchivos();
+                                    eliminar(channel);
+                                    mostrarArchivos(channel);
                                 }
                                 case 4 -> {
                                     System.out.println("cambiar dir");
@@ -235,6 +236,134 @@ public class NIOserver {
         dosf.close();
     }
 
+    public void descargar(SocketChannel channel) throws IOException, ClassNotFoundException{
+        esperaParaLeer(channel);
+        String elecdow = (String) leeObjeto(channel);
+        File fileToDowload = new File(dirActual+"\\"+elecdow);
+        if(fileToDowload.exists()){
+            System.out.println("Descargando "+fileToDowload.getAbsolutePath());
+
+            escribeObjeto("Descargando"+fileToDowload.getAbsolutePath(),channel);
+            /*oos.writeObject("Descargando" +fileToDowload.getAbsolutePath());
+            oos.flush();*/
+            if (!fileToDowload.isDirectory()) {  //descargar archivo
+                enviarDeseado(fileToDowload,channel);
+            } else {
+                String nomzip = fileToDowload.getAbsolutePath()+".zip";
+                System.out.println("nombre:" +nomzip);
+                ZipUtil.pack(fileToDowload, new File(nomzip));
+                enviarDeseado(new File(nomzip),channel);
+                new File(nomzip).delete();
+            }
+        }else {
+            escribeObjeto("El archivo o dir no existe",channel);
+            /*oos.writeObject("El archivo o dir no existe");
+            oos.flush();*/
+        }
+    }
+
+    public void enviarDeseado(File f,SocketChannel channel) throws IOException, ClassNotFoundException {
+        long tam = f.length();
+        System.out.println("Enviando '"+f.getName()+"' de "+tam/1024+" kb");
+
+
+        esperaParaLeer(channel);//esperaParaEscribir(channel);//aqui se quedaaaba
+        leeObjeto(channel);
+        escribeObjeto(f,channel);
+        /*oos.writeObject(f);
+        oos.flush();*/
+
+        DataInputStream disf = new DataInputStream(new FileInputStream(f.getAbsolutePath()));
+
+        long enviados = 0;
+        int l;
+        int n=0;
+        while (enviados<tam){
+            byte[] b = new byte[1500];
+            l=disf.read(b);
+            ByteBuffer buffer = ByteBuffer.wrap(b);
+            channel.write(buffer);
+            System.out.println("Bloque "+n+" done");
+
+            esperaParaLeer(channel);//esperaParaEscribir(channel);//espera pa escribir selector.select();
+            leeObjeto(channel);
+            enviados += l;
+            n++;
+        }
+        disf.close();
+        System.out.println("Archivo enviado");
+    }
+
+    public void eliminar(SocketChannel channel) throws IOException, ClassNotFoundException {     //trabajo en este
+        esperaParaLeer(channel);//selector.select();
+        String elec = (String) leeObjeto(channel);
+        File fileToDelete = new File(dirActual+"\\"+elec);
+        if(fileToDelete.exists()){
+            System.out.println("eliminando "+fileToDelete.getAbsolutePath());
+            if (!fileToDelete.isDirectory()) {  //eliminar archivo
+                if(fileToDelete.delete()) {
+                    /*oos.writeObject("Archivo eliminado");
+                    oos.flush();*/
+                    escribeObjeto("Archivo eliminado", channel);
+                }
+                else {
+                    /*oos.writeObject("Error al eliminar archivo");
+                    oos.flush();*/
+                    escribeObjeto("Error al eliminar archivo", channel);
+                }
+            }
+            else {        //eliminar directorio
+                if(deleteDirectory(fileToDelete)) {
+                    /*oos.writeObject("Dir eliminado");
+                    oos.flush();*/
+                    escribeObjeto("Dir eliminado", channel);
+                }
+                else {
+                    /*oos.writeObject("Error al eliminar dir");
+                    oos.flush();*/
+                    escribeObjeto("Error al eliminar dir", channel);
+                }
+            }
+        }else {
+            escribeObjeto("El archivo o dir no existe",channel);
+            /*oos.writeObject("El archivo o dir no existe");
+            oos.flush();*/
+        }
+    }
+    boolean deleteDirectory(File directoryToBeDeleted) {
+        File[] allContents = directoryToBeDeleted.listFiles();
+        if (allContents != null) {
+            for (File file : allContents)
+                deleteDirectory(file);
+        }
+        return directoryToBeDeleted.delete();
+    }
+
+    public void cambiarDir(SocketChannel channel) throws IOException, ClassNotFoundException {   //estoy trabajando en este
+        esperaParaLeer(channel);
+        String elec = (String) leeObjeto(channel);
+        File f = new File(dirActual+"\\"+elec);
+
+        boolean existeDir = f.isDirectory() || elec.equals("..");
+        if(!existeDir){  //comprobamos que el directorio solicitado existe
+            elec = "";
+            System.out.println("Dir invalido");
+        }
+
+        //escribeObjeto(existeDir);
+        if (existeDir)
+            escribeObjeto("si",channel);
+        else
+            escribeObjeto("no",channel);
+
+        System.out.println("Entrar a '"+elec+"'");
+        if(elec.equals("..")){
+            dirActual = raiz;
+        }else if(!elec.equals("")){
+            dirActual = dirActual + elec + "\\";
+        }
+        mostrarArchivos(channel);
+    }
 
     public static void main(String[] args) {
         new NIOserver();
